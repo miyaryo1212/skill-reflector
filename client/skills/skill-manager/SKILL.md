@@ -36,7 +36,8 @@ Steps:
 6. For namespace skills:
    - For each namespace declared in `.skill-reflector.yaml`
    - For each skill in `$SKILLS_LOCAL_PATH/namespaces/<namespace>/`
-   - Create a symlink in the project skills directory
+   - Create a symlink in the project skills directory using FQCN-like dot notation: `<namespace>.<skill-name>`
+   - Supports nested namespaces up to ~3 levels (e.g., `python.common`, `laravel.api.auth`)
 7. Report what was synced
 
 ### create
