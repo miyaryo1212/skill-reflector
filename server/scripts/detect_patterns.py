@@ -77,25 +77,80 @@ def get_all_skill_names(skills: dict) -> set:
 
 
 def detect_new_skill_candidates(conn: sqlite3.Connection, cutoff: str) -> list:
-    """A: Skillless sessions with repeating intent patterns."""
-    rows = conn.execute("""
-        SELECT s.project, ui.intent_text, COUNT(DISTINCT s.id) as session_count
+    """A: Skillless sessions grouped by project with all intents.
+
+    Instead of exact-match grouping (which rarely finds duplicates),
+    collect all intents from skillless sessions per project and let
+    Layer 3 (Claude) identify similar patterns across them.
+    """
+    # Get projects with skillless sessions
+    project_rows = conn.execute("""
+        SELECT s.project, COUNT(DISTINCT s.id) as session_count
         FROM sessions s
         LEFT JOIN skill_usages su ON s.id = su.session_id
-        JOIN user_intents ui ON s.id = ui.session_id AND ui.turn_index = 1
         WHERE su.session_id IS NULL
           AND s.started_at > ?
-          AND ui.intent_text IS NOT NULL
-          AND length(trim(ui.intent_text)) > 10
-        GROUP BY s.project, ui.intent_text
+          AND s.turn_count > 3
+        GROUP BY s.project
         HAVING session_count >= 2
         ORDER BY session_count DESC
-        LIMIT ?
-    """, (cutoff, SAMPLE_LIMIT)).fetchall()
-    return [
-        {"project": r[0], "intent": r[1], "session_count": r[2]}
-        for r in rows
-    ]
+        LIMIT 20
+    """, (cutoff,)).fetchall()
+
+    results = []
+    for project, session_count in project_rows:
+        # Collect intents and tool profiles for this project's skillless sessions
+        intent_rows = conn.execute("""
+            SELECT ui.intent_text, s.turn_count, s.id
+            FROM user_intents ui
+            JOIN sessions s ON ui.session_id = s.id
+            LEFT JOIN skill_usages su ON s.id = su.session_id
+            WHERE su.session_id IS NULL
+              AND s.project = ?
+              AND s.started_at > ?
+              AND s.turn_count > 3
+              AND ui.turn_index <= 3
+              AND ui.intent_text IS NOT NULL
+              AND length(trim(ui.intent_text)) > 10
+            ORDER BY s.started_at DESC
+        """, (project, cutoff)).fetchall()
+
+        # Collect tool usage profile for these sessions
+        tool_rows = conn.execute("""
+            SELECT tu.tool_name, SUM(tu.use_count) as total
+            FROM tool_usages tu
+            JOIN sessions s ON tu.session_id = s.id
+            LEFT JOIN skill_usages su ON s.id = su.session_id
+            WHERE su.session_id IS NULL
+              AND s.project = ?
+              AND s.started_at > ?
+              AND s.turn_count > 3
+            GROUP BY tu.tool_name
+            ORDER BY total DESC
+            LIMIT 10
+        """, (project, cutoff)).fetchall()
+
+        if not intent_rows:
+            continue
+
+        # Deduplicate intents per session (take first 3 turns per session)
+        seen_sessions = {}
+        intents = []
+        for text, turn_count, sid in intent_rows:
+            if sid not in seen_sessions:
+                seen_sessions[sid] = 0
+            seen_sessions[sid] += 1
+            if seen_sessions[sid] <= 3:
+                intents.append({"text": text, "turn_count": turn_count})
+
+        results.append({
+            "project": project,
+            "session_count": session_count,
+            "intents": intents[:30],  # Cap to avoid bloat
+            "top_tools": {r[0]: r[1] for r in tool_rows},
+        })
+
+    return results
 
 
 def detect_improvement_candidates(conn: sqlite3.Connection, cutoff: str) -> list:

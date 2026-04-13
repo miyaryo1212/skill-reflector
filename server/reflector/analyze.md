@@ -16,7 +16,7 @@ JSON 形式で以下が提供されます：
 
 - **analysis_period** — 分析対象期間
 - **total_sessions** — 総セッション数
-- **patterns.new_skill_candidates** — スキル未使用で繰り返し出現する意図パターン（project, intent, session_count）
+- **patterns.new_skill_candidates** — プロジェクト単位のスキル未使用セッション群（project, session_count, intents[], top_tools）
 - **patterns.improvement_candidates** — スキル使用後のターン数統計（skill_name, avg_turns, usage_count, max_turns）
 - **patterns.usage_stats** — スキル利用頻度（skill_name, total_invocations, session_count）
 - **patterns.unused_skills** — 30 日間使われていないスキル
@@ -28,17 +28,20 @@ JSON 形式で以下が提供されます：
 
 ### 1. 新規スキル候補 (new_skill)
 
-`new_skill_candidates` と `recent_intents_sample` を分析し、まだスキル化されていない繰り返し作業パターンを特定します。
+`new_skill_candidates` にはプロジェクト単位でスキル未使用セッションの意図（最初の数ターンのユーザー発話）とツール利用傾向がまとめられています。
+これらの意図群を横断的に読み、**類似する作業パターン**を見つけてください。完全一致でなく、意味的に同じカテゴリの作業を探します。
 
 判断基準：
-- 複数セッションで類似の意図が繰り返されている
+- 複数セッションで**意味的に類似する**意図が繰り返されている（完全一致でなくてよい）
 - 既存スキルでカバーされていない作業領域
 - スキル化による効率向上が見込める（手順が定型化できる）
+- ツール利用傾向も参考にする（例: Bash+Edit が多い = コード修正系の作業パターン）
 
 提案には以下を含めてください：
 - スキル名（簡潔、動詞+名詞）
 - 配置先（global or 特定 namespace）
 - SKILL.md の骨子（frontmatter + 主要セクション）
+- どのセッション意図群から着想したかの根拠
 
 ### 2. 既存スキル改善 (improvement)
 
