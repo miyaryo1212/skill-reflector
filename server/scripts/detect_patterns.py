@@ -83,37 +83,40 @@ def detect_new_skill_candidates(conn: sqlite3.Connection, cutoff: str) -> list:
     collect all intents from skillless sessions per project and let
     Layer 3 (Claude) identify similar patterns across them.
     """
-    # Get projects with skillless sessions
+    # Get projects with skillless sessions, grouped by directory name
+    # (normalizes across machines: /home/user/project/foo and /home/user/deploy/foo → foo)
     project_rows = conn.execute("""
-        SELECT s.project, COUNT(DISTINCT s.id) as session_count
+        SELECT replace(s.project, rtrim(s.project, replace(s.project, '/', '')), '') as project_name,
+               COUNT(DISTINCT s.id) as session_count
         FROM sessions s
         LEFT JOIN skill_usages su ON s.id = su.session_id
         WHERE su.session_id IS NULL
           AND s.started_at > ?
           AND s.turn_count > 3
-        GROUP BY s.project
+          AND s.project IS NOT NULL
+        GROUP BY project_name
         HAVING session_count >= 2
         ORDER BY session_count DESC
         LIMIT 20
     """, (cutoff,)).fetchall()
 
     results = []
-    for project, session_count in project_rows:
-        # Collect intents and tool profiles for this project's skillless sessions
+    for project_name, session_count in project_rows:
+        # Collect intents and tool profiles, matching by directory name suffix
         intent_rows = conn.execute("""
             SELECT ui.intent_text, s.turn_count, s.id
             FROM user_intents ui
             JOIN sessions s ON ui.session_id = s.id
             LEFT JOIN skill_usages su ON s.id = su.session_id
             WHERE su.session_id IS NULL
-              AND s.project = ?
+              AND s.project LIKE '%/' || ?
               AND s.started_at > ?
               AND s.turn_count > 3
               AND ui.turn_index <= 3
               AND ui.intent_text IS NOT NULL
               AND length(trim(ui.intent_text)) > 10
             ORDER BY s.started_at DESC
-        """, (project, cutoff)).fetchall()
+        """, (project_name, cutoff)).fetchall()
 
         # Collect tool usage profile for these sessions
         tool_rows = conn.execute("""
@@ -122,13 +125,13 @@ def detect_new_skill_candidates(conn: sqlite3.Connection, cutoff: str) -> list:
             JOIN sessions s ON tu.session_id = s.id
             LEFT JOIN skill_usages su ON s.id = su.session_id
             WHERE su.session_id IS NULL
-              AND s.project = ?
+              AND s.project LIKE '%/' || ?
               AND s.started_at > ?
               AND s.turn_count > 3
             GROUP BY tu.tool_name
             ORDER BY total DESC
             LIMIT 10
-        """, (project, cutoff)).fetchall()
+        """, (project_name, cutoff)).fetchall()
 
         if not intent_rows:
             continue
@@ -144,7 +147,7 @@ def detect_new_skill_candidates(conn: sqlite3.Connection, cutoff: str) -> list:
                 intents.append({"text": text, "turn_count": turn_count})
 
         results.append({
-            "project": project,
+            "project": project_name,
             "session_count": session_count,
             "intents": intents[:30],  # Cap to avoid bloat
             "top_tools": {r[0]: r[1] for r in tool_rows},
