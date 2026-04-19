@@ -13,9 +13,34 @@
 
 set -euo pipefail
 
+# cron runs with a minimal PATH; claude CLI lives under ~/.local/bin
+export PATH="$HOME/.local/bin:$PATH"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REFLECTOR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ENV_FILE="$REFLECTOR_ROOT/.env"
+REFLECTOR_LOG="${REFLECTOR_LOG:-$HOME/.skill-reflector/reflector.log}"
+SLACK_WEBHOOK_FILE="${SLACK_WEBHOOK_FILE:-$HOME/.claude/slack-webhook}"
+
+notify_failure() {
+  local exit_code=$?
+  local failed_line=${1:-unknown}
+  if [ -r "$SLACK_WEBHOOK_FILE" ]; then
+    local webhook host tail_log payload
+    webhook=$(cat "$SLACK_WEBHOOK_FILE")
+    host=$(hostname -s)
+    tail_log=$(tail -n 15 "$REFLECTOR_LOG" 2>/dev/null || echo "(log unavailable)")
+    payload=$(python3 -c '
+import json, sys
+text = ":rotating_light: *skill-reflector@{h} failed* (exit {c}, line {l})\n```\n{t}\n```".format(
+    h=sys.argv[1], c=sys.argv[2], l=sys.argv[3], t=sys.argv[4])
+print(json.dumps({"text": text}))
+' "$host" "$exit_code" "$failed_line" "$tail_log")
+    curl -sS --max-time 10 -X POST -H 'Content-Type: application/json' \
+      -d "$payload" "$webhook" >/dev/null 2>&1 || true
+  fi
+}
+trap 'notify_failure $LINENO' ERR
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "$(date -Iseconds) ERROR: .env not found at $ENV_FILE"
