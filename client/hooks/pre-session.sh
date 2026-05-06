@@ -1,6 +1,10 @@
 #!/bin/bash
 # skill-reflector pre-session hook for Claude Code
-# Runs /skill-manager sync automatically at session start
+# Pulls latest agent-skills (for symlinked global skills in ~/.claude/skills/).
+#
+# apm 移行後の役割:
+#   - グローバル symlink 経由で参照される skill の最新化のみ
+#   - プロジェクト固有 skill は apm install で同期 (オンデマンド)
 #
 # To register this hook, add to ~/.claude/settings.json:
 # {
@@ -33,7 +37,7 @@ fi
 
 SKILLS_LOCAL_PATH="${SKILLS_LOCAL_PATH/#\~/$HOME}"
 
-# Pull latest skills (fail silently)
+# Pull latest agent-skills (fail silently)
 if [ -d "$SKILLS_LOCAL_PATH/.git" ]; then
   git -C "$SKILLS_LOCAL_PATH" pull --quiet 2>/dev/null || true
 fi
