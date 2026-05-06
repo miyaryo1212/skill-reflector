@@ -4,112 +4,106 @@ description: Manage agent skills — sync, create, list, update, delete, log, st
 ---
 
 You are skill-manager, the central management skill for skill-reflector.
-Read the .env file from the skill-reflector installation directory to get configuration.
+配布層は `apm` (Agent Package Manager) に委譲し、このスキルは「agent-skills repo への入出力」と「Reflector 系のグルー」を担う。
 
 ## Finding the .env file
 
-The skill-reflector installation directory can be determined by resolving this SKILL.md file's real path (follow symlinks) and navigating to the repo root. Specifically:
+This SKILL.md は `~/.claude/skills/skill-manager` (または同等の Codex パス) から symlink されている。`.env` の位置は次の手順で解決する:
 
-1. This SKILL.md is symlinked from the skill-reflector repo at `client/skills/skill-manager/SKILL.md`
-2. The .env file is at the repo root: `<skill-reflector-repo>/.env`
-3. To find it, resolve the symlink of this skill's directory and go up 3 levels: `client/skills/skill-manager/` → repo root
-
-Use `readlink -f` on this skill's path to find the actual location, then load `.env` from the repo root.
+1. SKILL.md の real path を `readlink -f` で解決
+2. そこから上位3階層 (`client/skills/skill-manager/` → repo root) が skill-reflector のインストールルート
+3. ルート直下の `.env` を読む
 
 ## Subcommands
 
-Parse the user's input to determine which subcommand to run. If no subcommand is given, show available subcommands.
+引数なしで呼ばれた場合は使えるサブコマンドを一覧表示。
 
 ### sync
 
-Sync skills from the agent-skills repo to the current project.
+agent-skills repo を pull し、現在のプロジェクトに skill を再インストール。
 
 Steps:
-1. Load .env to get `SKILLS_LOCAL_PATH`
-2. Run `git -C $SKILLS_LOCAL_PATH pull --quiet` (ignore errors gracefully)
-3. Read `.skill-reflector.yaml` in the current project root to get declared namespaces
-4. Determine the target skills directory:
-   - If `~/.claude/` exists: target is both `~/.claude/skills/` (global) and `.claude/skills/` (project)
-   - If `~/.codex/` exists: target is both `~/.codex/skills/` (global) and `.agents/skills/` (project)
-5. For global skills (`$SKILLS_LOCAL_PATH/global/`):
-   - For each subdirectory, create a symlink in the global skills directory
-6. For namespace skills:
-   - For each namespace declared in `.skill-reflector.yaml`
-   - For each skill in `$SKILLS_LOCAL_PATH/namespaces/<namespace>/`
-   - Create a symlink in the project skills directory using FQCN-like dot notation: `<namespace>.<skill-name>`
-   - Supports nested namespaces up to ~3 levels (e.g., `python.common`, `laravel.api.auth`)
-7. Report what was synced
+1. `.env` から `SKILLS_LOCAL_PATH` を読む
+2. `git -C "$SKILLS_LOCAL_PATH" pull --quiet` (失敗しても続行)
+3. プロジェクトルートに `apm.yml` が無ければ:
+   - 旧 `.skill-reflector.yaml` の有無を確認し、あれば「`apm.yml` への移行を勧める」とユーザーに伝える
+   - その後は何もしない (apm.yml が無いプロジェクトでは sync 対象なし)
+4. `apm.yml` がある場合: `apm install --update --target claude` を実行
+   - Codex も使うプロジェクトでは `--target claude,codex` を案内
+5. 結果を簡潔に報告 (deployed skill 数とパス)
 
 ### create
 
-Create a new skill and register it in the agent-skills repo.
+新規 skill を作成し agent-skills repo へ PR を出す。
 
 Steps:
-1. Ask the user: skill name, description, and whether it's global or belongs to a namespace
-2. If namespace, ask which namespace (existing or new)
-3. Create the skill directory with SKILL.md using the template from `<skill-reflector-repo>/client/templates/skill-template.md`
-4. Place it in the correct location in `$SKILLS_LOCAL_PATH` (global/ or namespaces/<ns>/)
-5. Create a symlink in the appropriate skills directory
-6. Create a branch in agent-skills repo, commit, and push
-7. Create a PR using `gh pr create`
-8. After creation, scan the current project's skills directories for any unregistered skills (files/directories that are not symlinks pointing to agent-skills repo) and offer to register them
+1. ユーザーに尋ねる: skill 名、description、対象スコープ (グローバル / 特定プロジェクト用)
+2. `<skill-reflector-repo>/client/templates/skill-template.md` をテンプレに `SKILL.md` を生成
+   - `name:` はディレクトリ名と一致させる (Agent Skills 標準)
+   - プロジェクト固有 skill は `<context>-<skill>` 形式の名前を推奨 (例: `laravel-common`, `agent-sentinel-add-target`)
+3. `$SKILLS_LOCAL_PATH/skills/<name>/` にディレクトリ作成して配置
+4. agent-skills repo で feature branch を切り、commit、push
+5. `gh pr create` で PR
+6. PR 作成後、現プロジェクトの `apm.yml` に依存追加が必要か確認・案内
+   ```yaml
+   dependencies:
+     apm:
+       - <SKILLS_LOCAL_PATH>/skills/<name>
+   ```
 
 ### list
 
-List all managed skills and their status.
+管理下の skill 一覧を表示。
 
 Steps:
-1. Load .env to get `SKILLS_LOCAL_PATH`
-2. List global skills from `$SKILLS_LOCAL_PATH/global/`
-3. List namespace skills from `$SKILLS_LOCAL_PATH/namespaces/`
-4. Check the current project's skills directories for unregistered skills (not symlinked to agent-skills repo)
-5. Display as a formatted table showing: name, scope (global/namespace), status (registered/unregistered)
+1. `.env` から `SKILLS_LOCAL_PATH` を取得
+2. `$SKILLS_LOCAL_PATH/skills/` 配下の全 SKILL.md を列挙
+3. 現プロジェクトの `apm.yml` または `apm.lock.yaml` を読み、どれが install 済みか判定
+4. テーブルで表示: `name | description (1行) | installed?`
 
 ### update
 
-Update an existing skill.
+既存 skill を編集する。
 
 Steps:
-1. Let the user select which skill to update (from list)
-2. Read the current SKILL.md content
-3. Let the user describe the changes or edit directly
-4. Update the file in `$SKILLS_LOCAL_PATH`
-5. Create a branch, commit, push, and create a PR in agent-skills repo
+1. ユーザーが対象 skill を選択 (list を裏で実行)
+2. `$SKILLS_LOCAL_PATH/skills/<name>/SKILL.md` を読み込み、変更内容をユーザーと協議
+3. ファイルを編集
+4. agent-skills repo で feature branch を切り、commit、push、`gh pr create`
 
 ### delete
 
-Delete a skill.
+skill を削除する。
 
 Steps:
-1. Let the user select which skill to delete
-2. Confirm deletion
-3. Remove the symlink from skills directories
-4. Create a branch, remove the skill directory from `$SKILLS_LOCAL_PATH`, commit, push, and create a PR
+1. ユーザーが対象 skill を選択し、削除を確認
+2. agent-skills repo で feature branch を切り、`git rm -r skills/<name>` → commit、push
+3. `gh pr create` で PR
+4. 当該 skill に依存していたプロジェクトの `apm.yml` をユーザーに伝え、依存削除を案内
 
 ### log
 
-Record and send the current session log.
+現在のセッションログを記録・送信する (Reflector の入力)。
 
 Steps:
-1. Load .env to get `LOG_SERVER`, `LOG_SERVER_PATH`, `MACHINE_NAME`, `SERVER_ENABLED`
-2. Find the current session's log file:
-   - Claude Code: `~/.claude/projects/<project>/` (most recent .jsonl file)
-   - Codex: `~/.codex/sessions/YYYY/MM/DD/` (most recent rollout-*.jsonl)
-3. Copy the session log to a structured location:
-   - Generate filename: `<MACHINE_NAME>_<timestamp>.jsonl`
-4. Send/store based on mode:
+1. `.env` から `LOG_SERVER`, `LOG_SERVER_PATH`, `MACHINE_NAME`, `SERVER_ENABLED` を取得
+2. 現セッションのログファイルを特定:
+   - Claude Code: `~/.claude/projects/<project>/` の最新 `.jsonl`
+   - Codex: `~/.codex/sessions/YYYY/MM/DD/` の最新 `rollout-*.jsonl`
+3. 構造化ファイル名生成: `<MACHINE_NAME>_<timestamp>.jsonl`
+4. モードに応じて配置:
    - `SERVER_ENABLED=false`: `scp <logfile> $LOG_SERVER:$LOG_SERVER_PATH/$MACHINE_NAME/`
    - `SERVER_ENABLED=true`: `cp <logfile> $LOG_SERVER_PATH/$MACHINE_NAME/`
-5. Report success/failure
+5. 結果を報告
 
 ### status
 
-Show the current project's skill-reflector status.
+現プロジェクトの skill-reflector + apm 状態を表示。
 
 Steps:
-1. Show which agent is detected (Claude Code / Codex)
-2. Show .env configuration summary
-3. Show synced global skills count
-4. Show synced namespace skills for this project
-5. Show any unregistered skills
-6. Show last log submission timestamp (if available)
+1. 検出したエージェント (Claude Code / Codex) を表示
+2. `.env` の主要設定を要約
+3. `apm.yml` の有無と依存数、`apm.lock.yaml` の version
+4. グローバル symlink 経由で見える skill 数 (`~/.claude/skills/` を走査)
+5. 旧 `.skill-reflector.yaml` がまだ残っていれば「Phase 5 で削除予定」と注記
+6. 直近の log 送信タイムスタンプ (`SERVER_ENABLED=false` 時は scp ログ確認)
