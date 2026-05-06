@@ -73,8 +73,11 @@ def create_issue(repo: str, proposal: dict) -> bool:
 
     if proposal.get("target_skill"):
         body_parts.append(f"**Target skill**: `{proposal['target_skill']}`")
+    # Note: namespace field is deprecated since apm migration (Skill Collection layout
+    # has no namespaces). Older proposals may still include it; render as "Path" for
+    # backward compat, but new proposals should not emit this field.
     if proposal.get("namespace"):
-        body_parts.append(f"**Namespace**: `{proposal['namespace']}`")
+        body_parts.append(f"**Path**: `skills/{proposal['namespace']}` (legacy field)")
 
     body_parts.extend([
         "",

@@ -21,8 +21,10 @@ JSON 形式で以下が提供されます：
 - **patterns.usage_stats** — スキル利用頻度（skill_name, total_invocations, session_count）
 - **patterns.unused_skills** — 30 日間使われていないスキル
 - **patterns.tool_trends** — スキル未使用セッションでのツール利用傾向
-- **current_skills** — 現在のスキル定義（SKILL.md 全文、global と namespaces に分類）
+- **current_skills** — 現在のスキル定義（SKILL.md 全文、フラット配列）
 - **recent_intents_sample** — 直近セッションの意図・使用スキル・ツール構成サンプル
+
+agent-skills repo は apm Skill Collection レイアウト (`skills/<name>/SKILL.md`) を採用しており、グローバル/名前空間の区別はファイルシステム上に存在しない。プロジェクト固有 skill は名前自体に文脈を含める命名 (例: `agent-sentinel-add-target`, `laravel-common`) で識別する。
 
 ## 分析観点
 
@@ -38,8 +40,8 @@ JSON 形式で以下が提供されます：
 - ツール利用傾向も参考にする（例: Bash+Edit が多い = コード修正系の作業パターン）
 
 提案には以下を含めてください：
-- スキル名（簡潔、動詞+名詞）
-- 配置先（global or 特定 namespace）
+- スキル名（簡潔、動詞+名詞、`[a-z0-9-]` のみ、ディレクトリ名と一致させる）
+- 配置先 — 必ず `skills/<name>/`。プロジェクト固有なら名前にプレフィクスを含める (例: `<project>-<verb_noun>`)
 - SKILL.md の骨子（frontmatter + 主要セクション）
 - どのセッション意図群から着想したかの根拠
 
@@ -78,7 +80,6 @@ JSON 形式で以下が提供されます：
       "title": "提案タイトル（日本語）",
       "description": "詳細説明（日本語）。なぜこの提案が有効か、どのような証拠に基づくか。",
       "target_skill": null,
-      "namespace": "global または namespace 名",
       "evidence": "根拠データの要約（セッション数、パターンの具体例など）",
       "suggested_content": "---\nname: skill-name\ndescription: ...\n---\n\n# SKILL.md の内容"
     }
