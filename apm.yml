@@ -1,0 +1,6 @@
+name: skill-reflector
+version: 0.1.0
+dependencies:
+  apm:
+    # Python 関連 skill (旧 namespaces: [python] に対応)
+    - /home/miyaryo/.skill-reflector/agent-skills/skills/python-common
