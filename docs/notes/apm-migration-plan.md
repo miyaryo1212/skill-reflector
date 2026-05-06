@@ -38,9 +38,9 @@
 | **0. PoC 検証** | ✅ 完了 | 移行可否を確定させる判断材料を作る | apm 実機インストール、`--target claude/codex/agent-skills` の展開先確認、local path: dep の構文確認、global vs project-local 挙動の実測 | 0.5日 |
 | **1. agent-skills repo 再構成** | ✅ 完了 (PR #40) | APM Skill Collection 化 | `global/` → `skills/` rename、`namespaces/` の扱い決定、`apm.yml` 追加（10行） | 2-3h |
 | **2. Consumer 3 プロジェクト移行** | ✅ 完了 | 各プロジェクトを apm install 駆動に | `.skill-reflector.yaml` → `apm.yml` 書き換え、apm install で動作確認 | 2-3h |
-| **3. skill-manager / hooks 縮小** | ⏳ 未着手 | apm CLI に委譲できる部分を削減 | pre-session.sh を `apm install` に短縮、skill-manager の CRUD サブコマンドを薄ラッパーに（115→50行ほど）、log/status は残す | 0.5-1日 |
-| **4. Reflector 出力先調整** | ⏳ 未着手 | PR が apm 規約に従うように | analyze.md プロンプトのパス更新、apply_proposals.py の PR パス変更、(任意) apm.yml version bump 化 | 2-3h |
-| **5. クリーンアップ** | ⏳ 未着手 | 旧仕組みの撤去とドキュメント | 旧 symlink 9本除去、readme 更新、`.skill-reflector.yaml` 削除、setup.sh 退避 | 2-3h |
+| **3. skill-manager / hooks 縮小** | ✅ 完了 (PR #2) | apm CLI に委譲できる部分を削減 | pre-session.sh を `apm install` に短縮、skill-manager の CRUD サブコマンドを薄ラッパーに（115→50行ほど）、log/status は残す | 0.5-1日 |
+| **4. Reflector 出力先調整 + バグ修正** | ✅ 完了 (PR #3) | PR が apm 規約に従うように + 評価指標バグ修正 | analyze.md プロンプトのパス更新、detect_patterns.py の load_skills 書き換え、namespace 二重登録バグ除去 | 2-3h |
+| **5. クリーンアップ** | ⏳ 未着手 | 旧仕組みの撤去とドキュメント | 旧 symlink 9本除去、readme 更新、`.skill-reflector.yaml` 削除、setup.sh 退避、`~/deploy/skill-reflector/` 整理 | 2-3h |
 
 ### Phase 1 + 2 の実施記録
 
@@ -60,6 +60,17 @@
 
 各プロジェクトで `.skill-reflector.yaml` は **意図的に残置** (Phase 5 cleanup で削除予定)。
 旧 hook の動作 (git pull のみ) と並行運用しても干渉なし。
+
+**Phase 3** (skill-reflector, 2026-05-07, PR #2):
+- `pre-session.sh`: コメントを apm 後の役割に更新 (実装は git pull 維持)
+- `skill-manager/SKILL.md`: 全サブコマンドを apm 委譲版に書き換え (115 → 109行)
+- `~/.claude/skills/skill-manager` symlink を `deploy/` から working dir に張替え
+
+**Phase 4** (skill-reflector, 2026-05-07, PR #3):
+- `detect_patterns.py`: `load_skills` を flat `skills/` 走査へ書き換え。**namespace skill 名の二重登録バグを修正** (素の名前と FQN の両方を skill 名集合に入れていたため、素の名前が常に「30 日未使用」と誤判定され、deprecate 提案が量産されていた)
+- `analyze.md`: 入出力スキーマを apm flat 前提に更新 (`current_skills` 配列化、namespace 概念削除)
+- `apply_proposals.py`: Issue body の Namespace 行を後方互換扱い
+- agent-skills repo の **過去 29 件 reflector issues を not-planned で一括 close** (上記バグ起因の誤検出)
 
 **合計: 3日 ± 1日**（実コーディング時間ベース、待ち時間除く）
 
