@@ -26,54 +26,33 @@ ANALYSIS_WINDOW_DAYS = 30
 SAMPLE_LIMIT = 50
 
 
-def load_skills(skills_dir: Path) -> dict:
-    """Load current skill definitions from the agent-skills repo."""
-    result = {"global": [], "namespaces": {}}
+def load_skills(skills_dir: Path) -> list:
+    """Load current skill definitions from the agent-skills repo (apm Skill Collection layout).
 
-    global_dir = skills_dir / "global"
-    if global_dir.is_dir():
-        for skill_dir in sorted(global_dir.iterdir()):
-            skill_file = skill_dir / "SKILL.md" if skill_dir.is_dir() else None
-            if skill_file and skill_file.exists():
-                result["global"].append({
+    Reads `skills/<name>/SKILL.md` files. The legacy `global/` and `namespaces/`
+    directories are no longer supported — apm migration Phase 1 flattened those
+    into `skills/<flat-name>/` (e.g. `agent-sentinel-add-target`).
+    """
+    result = []
+
+    skills_root = skills_dir / "skills"
+    if skills_root.is_dir():
+        for skill_dir in sorted(skills_root.iterdir()):
+            if not skill_dir.is_dir():
+                continue
+            skill_file = skill_dir / "SKILL.md"
+            if skill_file.exists():
+                result.append({
                     "name": skill_dir.name,
                     "content": skill_file.read_text(errors="replace"),
                 })
-            elif skill_dir.is_file() and skill_dir.suffix == ".md":
-                result["global"].append({
-                    "name": skill_dir.stem,
-                    "content": skill_dir.read_text(errors="replace"),
-                })
-
-    ns_dir = skills_dir / "namespaces"
-    if ns_dir.is_dir():
-        for ns in sorted(ns_dir.iterdir()):
-            if not ns.is_dir():
-                continue
-            ns_skills = []
-            for skill_path in sorted(ns.rglob("SKILL.md")):
-                rel = skill_path.parent.relative_to(ns)
-                name = ".".join(rel.parts) if rel.parts else skill_path.parent.name
-                ns_skills.append({
-                    "name": name,
-                    "content": skill_path.read_text(errors="replace"),
-                })
-            if ns_skills:
-                result["namespaces"][ns.name] = ns_skills
 
     return result
 
 
-def get_all_skill_names(skills: dict) -> set:
-    """Extract all skill names from the loaded skills structure."""
-    names = set()
-    for s in skills["global"]:
-        names.add(s["name"])
-    for ns, ns_skills in skills["namespaces"].items():
-        for s in ns_skills:
-            names.add(f"{ns}.{s['name']}" if s["name"] != ns else s["name"])
-            names.add(s["name"])
-    return names
+def get_all_skill_names(skills: list) -> set:
+    """Extract all skill names from the loaded skills list."""
+    return {s["name"] for s in skills}
 
 
 def detect_new_skill_candidates(conn: sqlite3.Connection, cutoff: str) -> list:
