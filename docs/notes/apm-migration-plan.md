@@ -40,7 +40,7 @@
 | **2. Consumer 3 プロジェクト移行** | ✅ 完了 | 各プロジェクトを apm install 駆動に | `.skill-reflector.yaml` → `apm.yml` 書き換え、apm install で動作確認 | 2-3h |
 | **3. skill-manager / hooks 縮小** | ✅ 完了 (PR #2) | apm CLI に委譲できる部分を削減 | pre-session.sh を `apm install` に短縮、skill-manager の CRUD サブコマンドを薄ラッパーに（115→50行ほど）、log/status は残す | 0.5-1日 |
 | **4. Reflector 出力先調整 + バグ修正** | ✅ 完了 (PR #3) | PR が apm 規約に従うように + 評価指標バグ修正 | analyze.md プロンプトのパス更新、detect_patterns.py の load_skills 書き換え、namespace 二重登録バグ除去 | 2-3h |
-| **5. クリーンアップ** | ⏳ 未着手 | 旧仕組みの撤去とドキュメント | 旧 symlink 9本除去、readme 更新、`.skill-reflector.yaml` 削除、setup.sh 退避、`~/deploy/skill-reflector/` 整理 | 2-3h |
+| **5. クリーンアップ** | ✅ 完了 (PR #4) | 旧仕組みの撤去とドキュメント | 旧 symlink 8本除去、readme 更新、`.skill-reflector.yaml` 削除、setup.sh 書き換え、`~/deploy/skill-reflector/` 削除 | 2-3h |
 
 ### Phase 1 + 2 の実施記録
 
@@ -71,6 +71,38 @@
 - `analyze.md`: 入出力スキーマを apm flat 前提に更新 (`current_skills` 配列化、namespace 概念削除)
 - `apply_proposals.py`: Issue body の Namespace 行を後方互換扱い
 - agent-skills repo の **過去 29 件 reflector issues を not-planned で一括 close** (上記バグ起因の誤検出)
+
+**Phase 5** (skill-reflector, 2026-05-07, PR #4):
+- `~/.claude/skills/` の 8 旧 symlink を削除し、`apm install -g --target claude` 駆動に置き換え
+  - `~/.apm/apm.yml` で 9 個の cross-cutting skill を依存宣言 (project-specific は除外)
+- `pre-session.sh`: `apm install -g --update --target claude` を追加 (copy 配置を最新化)
+- `setup.sh`: 旧 symlink 量産ロジックを廃止、`~/.apm/apm.yml` 自動生成 + `apm install -g`
+- `readme.md`: 1 行 → apm 後の全体構成を記載
+- 全 consumer から `.skill-reflector.yaml` 削除 (3 プロジェクト)
+- `~/deploy/skill-reflector/` 削除 (historical artifact)
+
+## 移行後の skill 配布フロー
+
+```
+agent-skills (private repo, Skill Collection)
+  └── skills/<name>/SKILL.md
+         │
+         ├── apm install -g  (~/.apm/apm.yml)
+         │     └─→ ~/.claude/skills/  (9 cross-cutting)
+         │
+         └── apm install (project/apm.yml)
+               └─→ project/.claude/skills/  (project-specific)
+```
+
+## 移行完了
+
+全 Phase 完了 (2026-05-07)。Phase 0 で見積もった「2日」より大幅に短縮し、半日で完走。
+
+主な収穫:
+- 配布層を apm 一本に集約
+- Phase 4 で長年潜伏していた評価指標バグ (namespace 二重登録) を修正
+- 過去 29 件の偽陽性 deprecate issue を一括 close
+- skill-manager / hooks / setup.sh を apm 前提に簡素化
 
 **合計: 3日 ± 1日**（実コーディング時間ベース、待ち時間除く）
 
