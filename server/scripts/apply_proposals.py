@@ -170,7 +170,11 @@ def main():
     print(f"Summary: {data.get('summary', '')}", file=sys.stderr)
     print(f"Processing {len(proposals)} proposal(s)...", file=sys.stderr)
 
-    # Check for duplicates
+    # Check for duplicates. Exact title match alone is not enough: the LLM
+    # rewords the same proposal slightly on every run ("実装ガイド" vs
+    # "実装パターン" vs "実装ガイダンス"), so also skip when an open issue
+    # already mentions the proposal's target skill — one open item per skill
+    # is the desired triage granularity.
     existing_titles = get_existing_issues(repo) | get_existing_prs(repo)
 
     created = 0
@@ -179,6 +183,13 @@ def main():
         title = f"[Reflector] {proposal['title']}"
         if title in existing_titles:
             print(f"  Skipping duplicate: {title}", file=sys.stderr)
+            skipped += 1
+            continue
+
+        skill = proposal.get("target_skill") or ""
+        if skill and any(skill in t for t in existing_titles):
+            print(f"  Skipping: open issue already covers skill '{skill}': {title}",
+                  file=sys.stderr)
             skipped += 1
             continue
 
