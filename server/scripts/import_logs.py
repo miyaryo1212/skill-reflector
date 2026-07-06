@@ -160,12 +160,20 @@ def import_file(conn: sqlite3.Connection, filepath: Path, machine: str) -> bool:
     if not session:
         return False
 
-    # Skip if already imported
+    # Already imported? The client ships a snapshot at every Stop, so the same
+    # session can arrive multiple times, each fuller than the last. Keep the
+    # fullest version: replace when the new snapshot has more turns.
     row = conn.execute(
-        "SELECT 1 FROM sessions WHERE id = ?", (session["id"],)
+        "SELECT turn_count FROM sessions WHERE id = ?", (session["id"],)
     ).fetchone()
     if row:
-        return False
+        if (session["turn_count"] or 0) <= (row[0] or 0):
+            return False
+        # Children first: schema has FKs into sessions without ON DELETE CASCADE
+        conn.execute("DELETE FROM skill_usages WHERE session_id = ?", (session["id"],))
+        conn.execute("DELETE FROM tool_usages WHERE session_id = ?", (session["id"],))
+        conn.execute("DELETE FROM user_intents WHERE session_id = ?", (session["id"],))
+        conn.execute("DELETE FROM sessions WHERE id = ?", (session["id"],))
 
     conn.execute(
         """INSERT INTO sessions (id, machine, project, entrypoint, git_branch,
