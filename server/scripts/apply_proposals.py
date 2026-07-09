@@ -32,31 +32,30 @@ def get_repo_name(repo_url: str) -> str:
 
 
 def get_existing_issues(repo: str) -> set[str]:
-    """Get titles of existing open issues with 'reflector' label."""
-    try:
-        result = subprocess.run(
-            ["gh", "issue", "list", "--repo", repo, "--label", "reflector",
-             "--state", "open", "--json", "title", "--limit", "100"],
-            capture_output=True, text=True, check=True,
-        )
-        issues = json.loads(result.stdout)
-        return {issue["title"] for issue in issues}
-    except (subprocess.CalledProcessError, json.JSONDecodeError):
-        return set()
+    """Get titles of existing open issues with 'reflector' label.
+
+    Raises on failure: silently returning an empty set here disables
+    deduplication entirely and duplicate issues get created (observed
+    2026-07-07/08). Better to abort the run than to spam duplicates.
+    """
+    result = subprocess.run(
+        ["gh", "issue", "list", "--repo", repo, "--label", "reflector",
+         "--state", "open", "--json", "title", "--limit", "100"],
+        capture_output=True, text=True, check=True,
+    )
+    issues = json.loads(result.stdout)
+    return {issue["title"] for issue in issues}
 
 
 def get_existing_prs(repo: str) -> set[str]:
-    """Get titles of existing open PRs."""
-    try:
-        result = subprocess.run(
-            ["gh", "pr", "list", "--repo", repo,
-             "--state", "open", "--json", "title", "--limit", "100"],
-            capture_output=True, text=True, check=True,
-        )
-        prs = json.loads(result.stdout)
-        return {pr["title"] for pr in prs}
-    except (subprocess.CalledProcessError, json.JSONDecodeError):
-        return set()
+    """Get titles of existing open PRs. Raises on failure (see above)."""
+    result = subprocess.run(
+        ["gh", "pr", "list", "--repo", repo,
+         "--state", "open", "--json", "title", "--limit", "100"],
+        capture_output=True, text=True, check=True,
+    )
+    prs = json.loads(result.stdout)
+    return {pr["title"] for pr in prs}
 
 
 def create_issue(repo: str, proposal: dict) -> bool:
@@ -175,7 +174,13 @@ def main():
     # "実装パターン" vs "実装ガイダンス"), so also skip when an open issue
     # already mentions the proposal's target skill — one open item per skill
     # is the desired triage granularity.
-    existing_titles = get_existing_issues(repo) | get_existing_prs(repo)
+    try:
+        existing_titles = get_existing_issues(repo) | get_existing_prs(repo)
+    except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
+        print(f"Error: could not fetch existing issues/PRs ({e}); "
+              "aborting without creating anything to avoid duplicates.",
+              file=sys.stderr)
+        sys.exit(1)
 
     created = 0
     skipped = 0
